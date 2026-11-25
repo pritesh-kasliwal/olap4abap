@@ -87,6 +87,25 @@ Off (the default) nothing changes, so the captured cases and the Mondrian test s
 Not done: a dimension of several hierarchies named without its hierarchy, and the other differences the reference's
 measurement lists (`docs/next-steps.md`); checked with FoodMart and the clinic InfoCube in the Syncfusion pivot.
 
+## Key date (any database)
+
+BW serves time-dependent hierarchies (and versions with several time slices) at a key date, today unless a query
+names one. olap4abap served them at 9999-12-31 only. `ZZXXMLA1_CL_KEY_DATE` takes the key date of each XMLA request
+and `ZZXXMLA1_CL_XMLA_HANDLER` sets it (`ZZXXMLA1_CL_SCHEMA=>set_key_date`) before the schema is read:
+
+- the property `KeyDate` of the Discover or Execute `PropertyList`, else
+- the URL parameter `keyDate` of the endpoint (`/zzxxmla1?sap-client=001&keyDate=2024-06-15`), for clients that send
+  no own properties (the Syncfusion pivot), else
+- today.
+
+`YYYY-MM-DD` or `YYYYMMDD`; another value is a client fault ("XMLA bad key date"). A BW hierarchy is then the copy of
+its slice valid at the key date, and a hierarchy without such a slice is not in the schema, as `bw/check` serves them.
+The Discover cache keys its answers by the key date too.
+
+Not yet at the key date: the time-dependent attributes and the texts in the generated characteristic views
+(`ZZXXMLA1_CL_BW_VIEW_GEN`), which stay at 9999-12-31 (CDS views with the date in their join). On ASE no schema names
+a BW hierarchy (above), so there the key date changes no answer yet.
+
 ## Installing on NetWeaver 7.52
 
 The package activates on 7.52 without changes (ABAP Doc and other warnings only). The tables' abapGit files were

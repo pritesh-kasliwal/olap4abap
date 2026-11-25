@@ -70,7 +70,7 @@ Read before designing anything:
   the probe classifies BW's, with the reason, BW's message and the selection checked; the statement resolved in BW's
   names, `ZZXXMLA1_CL_MDX_SCHEMA_READER=>for_bw_cube`, its slicer, axes and subselects evaluated without cells and
   NON EMPTY, `ZZXXMLA1_CL_MDX_ENGINE=>members`, on the BW hierarchies' slices valid at the key date
-  (`ZZXXMLA1_CL_SCHEMA=>set_key_date`; XMLA always 9999-12-31), their selection, `ZZXXMLA1_CL_BW_AUTH_SELECTION`, checked in HANA,
+  (`ZZXXMLA1_CL_SCHEMA=>set_key_date`; XMLA the request's key date, `ZZXXMLA1_CL_KEY_DATE`: property `KeyDate`, URL parameter `keyDate`, else today), their selection, `ZZXXMLA1_CL_BW_AUTH_SELECTION`, checked in HANA,
   `ZZXXMLA1_CL_BW_AUTH_SQL=>check_query`, phase `Authorisation`; a BW hierarchy's members restricted to what the user
   may see (step 5b, `ZZXXMLA1_CL_BW_HIERARCHY_COPY=>restriction`);
   `python scripts/bw_auth_compare.py` compares with `reference/auth/`, every test user agreeing at every key date; traced as XMLA calls are, method `CHECK`,

@@ -89,7 +89,9 @@ CLASS zzxxmla1_main_endpoint IMPLEMENTATION.
             client_address = server->request->get_header_field( '~remote_addr' )
             user_agent     = server->request->get_header_field( 'user-agent' )
             forced         = xsdbool( to_lower( server->request->get_header_field( 'x-olap4abap-trace' ) ) = `true` ) ).
-        DATA(result) = NEW zzxxmla1_cl_xmla_handler( )->handle( request = body url = url ).
+        DATA(result) = NEW zzxxmla1_cl_xmla_handler( )->handle( request  = body
+                                                                 url      = url
+                                                                 key_date = server->request->get_form_field( 'keyDate' ) ).
         IF trace IS BOUND.
           trace->finish( status = result-status response = result-body parts = result-parts ).
           server->response->set_header_field( name = 'X-olap4abap-Trace-Id' value = |{ trace->trace_id }| ).

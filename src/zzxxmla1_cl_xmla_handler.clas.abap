@@ -32,9 +32,12 @@ CLASS zzxxmla1_cl_xmla_handler DEFINITION
     "! called from tests and from the ICF handler alike.
     "! @parameter request | the SOAP request body
     "! @parameter url | the URL clients use to reach this endpoint (DISCOVER_DATASOURCES of a data source without URL)
+    "! @parameter key_date | the URL's parameter keyDate, the key date unless the request has the property KeyDate
+    "! (ZZXXMLA1_CL_KEY_DATE; today without either)
     METHODS handle
       IMPORTING request       TYPE string
                 url           TYPE string
+                key_date      TYPE string OPTIONAL
       RETURNING VALUE(result) TYPE ty_result.
 
   PRIVATE SECTION.
@@ -337,9 +340,21 @@ CLASS zzxxmla1_cl_xmla_handler IMPLEMENTATION.
         result = fault_result( fault ).
         RETURN.
     ENDTRY.
+    " the key date BW's hierarchies are served at (ZZXXMLA1_CL_KEY_DATE), before the schema is read
+    DATA(key_date_property) = VALUE string( parsed-properties[ name = zzxxmla1_cl_key_date=>c_property ]-value OPTIONAL ).
+    TRY.
+        DATA(served_date) = zzxxmla1_cl_key_date=>of_request( property = key_date_property url_value = key_date ).
+      CATCH cx_abap_datfm.
+        result = fault_result( zzxxmla1_cx_xmla=>of_code(
+          kind = `Client` code = `00HSBB16` text = `XMLA bad key date`
+          description = |olap4abap Error:The key date { COND string( WHEN key_date_property IS NOT INITIAL THEN key_date_property
+                                                                     ELSE key_date ) } is not a date (YYYY-MM-DD)| ) ).
+        result-body = with_session( body = result-body request = parsed ).
+        RETURN.
+    ENDTRY.
     " a Discover answer is kept (ZZXXMLA1_CL_DISCOVER_CACHE): the same request is answered without reading the schemas
     IF parsed-method = `DISCOVER`.
-      DATA(cache_key) = discover_key( request = parsed url = url ).
+      DATA(cache_key) = |{ discover_key( request = parsed url = url ) }\nK { served_date }|.
       result-body = zzxxmla1_cl_discover_cache=>read( cache_key ).
       IF result-body IS NOT INITIAL.
         result-status = 200.
@@ -351,6 +366,7 @@ CLASS zzxxmla1_cl_xmla_handler IMPLEMENTATION.
     ENDIF.
     TRY.
         repository = zzxxmla1_cl_repository=>get( ).
+        zzxxmla1_cl_schema=>set_key_date( served_date ).
         schema = zzxxmla1_cl_schema=>get( ).
         data_source = repository->data_source( VALUE #( parsed-properties[ name = 'DataSourceInfo' ]-value OPTIONAL ) ).
         " the data source's naming of hierarchies, before anything is named (ZZXXMLA1_CL_NAMING)
