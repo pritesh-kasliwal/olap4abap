@@ -387,9 +387,16 @@ CLASS zzxxmla1_cl_model IMPLEMENTATION.
     ENDIF.
     result = zzxxmla1_cl_sql=>quote( hierarchy-dim_table ).
     IF hierarchy-members_with_facts = abap_true.
+      " a standard InfoCube's flat facts view (BW on SAP ASE) joins every dimension: its SIDs come from the
+      " characteristic's dimension table instead (ZZXXMLA1_CL_BW_CLASSIC_CUBE=>sid_source)
+      DATA(sids) = zzxxmla1_cl_bw_classic_cube=>sid_source( view       = hierarchy-fact_table
+                                                            sid_column = hierarchy-fk_column ).
+      IF sids IS INITIAL.
+        sids = |SELECT { zzxxmla1_cl_sql=>quote( hierarchy-fk_column ) } | &&
+               |FROM { zzxxmla1_cl_sql=>quote( hierarchy-fact_table ) }|.
+      ENDIF.
       result = |( SELECT * FROM { result } WHERE { zzxxmla1_cl_sql=>quote( hierarchy-key_column ) } IN | &&
-               |( SELECT { zzxxmla1_cl_sql=>quote( hierarchy-fk_column ) } | &&
-               |FROM { zzxxmla1_cl_sql=>quote( hierarchy-fact_table ) } ) ) AS mf|.
+               |( { sids } ) ) AS mf|.
     ENDIF.
   ENDMETHOD.
 

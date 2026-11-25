@@ -34,6 +34,11 @@ HANA-optimised InfoCube's fact table, so `ZZXXMLA1_CL_BW_PROVIDER` (which now li
 `ZZXXMLA1_CL_BW_VIEW_GEN` take the view as the cube's fact table and nothing else changes: the proposal, accept,
 the characteristics' views and the engine. Reading a cube generates the view; listing providers does not.
 
+Members with facts (`olap4abap.membersWithFacts`) of such a cube read a characteristic's SIDs from its dimension
+table, not from the view (which joins every dimension): `ZZXXMLA1_CL_BW_CLASSIC_CUBE=>sid_source`, used by
+`ZZXXMLA1_CL_MODEL=>member_table`. A dimension table can hold DIMIDs of deleted requests until BW removes them, so
+such a member can count as having facts; a line-item dimension is read from the view.
+
 Checked: on `0D_NW_C01` the view gives the F table's rows and totals; the clinic InfoCube `ZCLVISIT` (created by the
 setup, standard on ASE) is proposed, accepted and answers MDX through XMLA (its measures equal the fact table's sums).
 

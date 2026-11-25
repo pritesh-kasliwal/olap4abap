@@ -49,8 +49,26 @@ CLASS zzxxmla1_cl_bw_classic_cube DEFINITION
       RETURNING VALUE(result) TYPE string
       RAISING   zzxxmla1_cx_bw_provider.
 
+    "! The SIDs of a characteristic with facts, cheaper than the flat view: for the flat facts view of a standard
+    "! InfoCube and the SID column of a characteristic in a dimension table (not a line-item dimension), the query
+    "! SELECT "SID_..." FROM "<dimension table>"; initial otherwise (the caller reads the view). A dimension table can
+    "! hold DIMIDs of deleted requests until BW removes them, so the set may be larger than the facts' (members with
+    "! facts, ZZXXMLA1_CL_MODEL=>member_table).
+    CLASS-METHODS sid_source
+      IMPORTING !view         TYPE csequence
+                sid_column    TYPE csequence
+      RETURNING VALUE(result) TYPE string.
+
   PROTECTED SECTION.
   PRIVATE SECTION.
+    TYPES:
+      BEGIN OF ty_sid_source,
+        view       TYPE string,
+        sid_column TYPE string,
+        sql        TYPE string,
+      END OF ty_sid_source.
+    CLASS-DATA sid_sources TYPE HASHED TABLE OF ty_sid_source WITH UNIQUE KEY view sid_column.
+
     CONSTANTS c_ddl_prefix TYPE string VALUE `ZZXXMLA1_K_`.
     CONSTANTS c_view_prefix TYPE string VALUE `ZZXXMLA1K`.
 
@@ -264,6 +282,43 @@ CLASS zzxxmla1_cl_bw_classic_cube IMPLEMENTATION.
              |@EndUserText.label: 'BW classic InfoCube { cube_name }: flat facts'\n| &&
              |define view { to_lower( ddl_name ) } as\n| &&
              |{ concat_lines_of( table = branches sep = |\nunion all\n| ) }\n|.
+  ENDMETHOD.
+
+  METHOD sid_source.
+    DATA sid_name TYPE rs_char30.
+    DATA(key) = VALUE ty_sid_source( view = to_upper( view ) sid_column = to_upper( sid_column ) ).
+    READ TABLE sid_sources INTO DATA(known) WITH TABLE KEY view = key-view sid_column = key-sid_column.
+    IF sy-subrc = 0.
+      result = known-sql.
+      RETURN.
+    ENDIF.
+    DATA(view_name) = CONV zzxxmla1_view-view_name( key-view ).
+    SELECT SINGLE object_name FROM zzxxmla1_view
+      WHERE kind = @c_kind AND view_name = @view_name
+      INTO @DATA(object_name).
+    IF sy-subrc = 0.
+      DATA(cube) = CONV rsinfocube( object_name ).
+      SELECT d~iobjnm, m~linitfl, m~tablnm FROM rsddimeiobj AS d
+        INNER JOIN rsddime AS m ON m~infocube = d~infocube AND m~dimension = d~dimension AND m~objvers = d~objvers
+        WHERE d~infocube = @cube AND d~objvers = 'A' AND m~iobjtp <> 'DPA'
+        INTO TABLE @DATA(rows).
+      LOOP AT rows INTO DATA(row) WHERE linitfl = abap_false AND tablnm IS NOT INITIAL.
+        CLEAR sid_name.
+        CALL FUNCTION 'RSD_SIDNM_GET_FROM_IOBJNM'
+          EXPORTING
+            i_iobjnm     = row-iobjnm
+          IMPORTING
+            e_sidfieldnm = sid_name
+          EXCEPTIONS
+            OTHERS       = 1.
+        IF sy-subrc = 0 AND to_upper( sid_name ) = key-sid_column.
+          key-sql = |SELECT "{ key-sid_column }" FROM "{ row-tablnm }"|.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+    INSERT key INTO TABLE sid_sources.
+    result = key-sql.
   ENDMETHOD.
 
   METHOD table_fields.
