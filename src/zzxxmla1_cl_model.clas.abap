@@ -98,7 +98,7 @@ CLASS zzxxmla1_cl_model DEFINITION
     CONSTANTS c_separator TYPE c LENGTH 1 VALUE cl_abap_char_utilities=>horizontal_tab.
 
     "! MDX unique name of a hierarchy: [Dimension] for the hierarchy named like the dimension, [Dimension.Hierarchy]
-    "! for the others.
+    "! for the others; with SSAS naming (ZZXXMLA1_CL_NAMING) [Dimension].[Hierarchy] for all but [Measures].
     CLASS-METHODS hierarchy_unique_name
       IMPORTING dim_name      TYPE clike
                 hier_name     TYPE clike
@@ -344,6 +344,11 @@ ENDCLASS.
 CLASS zzxxmla1_cl_model IMPLEMENTATION.
 
   METHOD hierarchy_unique_name.
+    " SSAS naming (ZZXXMLA1_CL_NAMING): [Dimension].[Hierarchy] for every hierarchy but the measures
+    IF zzxxmla1_cl_naming=>ssas( ) = abap_true AND to_upper( dim_name ) <> `MEASURES`.
+      result = |[{ dim_name }].[{ hier_name }]|.
+      RETURN.
+    ENDIF.
     result = COND #( WHEN hier_name = dim_name THEN |[{ dim_name }]| ELSE |[{ dim_name }.{ hier_name }]| ).
   ENDMETHOD.
 

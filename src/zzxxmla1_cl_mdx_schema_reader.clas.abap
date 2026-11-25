@@ -1688,8 +1688,10 @@ CLASS zzxxmla1_cl_mdx_schema_reader IMPLEMENTATION.
         ENDIF.
       ENDLOOP.
     ENDIF.
+    " SsasCompatibleNaming=true (ZZXXMLA1_CL_NAMING): a hierarchy of that name wins, also one named as the dimension
     IF result-kind IS INITIAL
-        OR equal_name( name1 = hierarchies[ result-id + 1 ]-name name2 = dim-name ) = abap_true.
+        OR ( zzxxmla1_cl_naming=>ssas( ) = abap_false
+             AND equal_name( name1 = hierarchies[ result-id + 1 ]-name name2 = dim-name ) = abap_true ).
       DATA(level) = lookup_child_of_hierarchy( hierarchy = dim-hierarchies[ 1 ] segment = segment ).
       IF level-kind IS NOT INITIAL.
         result = level.

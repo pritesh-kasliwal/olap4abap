@@ -61,6 +61,27 @@ keyed by `SID` = the FoodMart id, with the columns of the BW cube's views. Same 
 5. Run `ZZXXMLA1_CL_ASE_SMOKE` (F9): XMLA requests to `ZZXXMLA1_CL_XMLA_HANDLER` without the ICF node, the answers
    in short.
 
+## SSAS naming (any database)
+
+The reference names hierarchies with `SsasCompatibleNaming=false` (`[Customers]`, `[Time.Weekly]`,
+`[Time].[1997]`; `docs/next-steps.md`, Later). Clients that build names from the rowsets as SSAS names them, such as
+the Syncfusion pivot in OLAP mode, cannot place such hierarchies. `ZZXXMLA1_CL_NAMING` switches SSAS naming on per
+data source: its `DataSourceInfo` in `/WEB-INF/datasources.xml` names `SsasCompatibleNaming=true`, e.g.
+`<DataSourceInfo>Provider=olap4abap;SsasCompatibleNaming=true</DataSourceInfo>` (writing the file clears the
+Discover cache). `ZZXXMLA1_CL_XMLA_HANDLER` sets it for each request. With it on:
+
+- every hierarchy is `[Dimension].[Hierarchy]` (`ZZXXMLA1_CL_MODEL=>hierarchy_unique_name`), `[Measures]` excepted,
+  so members and levels carry it: `[Customers].[Customers].[USA]`, `[Time].[Time].[1997].[Q1]`;
+- `[Dimension].[Name]` resolves to the hierarchy of that name before a level of the default hierarchy, as the
+  reference's `DimensionBase.lookupChild` does with the property on (`ZZXXMLA1_CL_MDX_SCHEMA_READER`);
+- a member's or level's hierarchy in a rowset restriction is its first two segments (`ZZXXMLA1_CL_XMLA_HANDLER`);
+- `MEMBER_VALUE` among the `DIMENSION PROPERTIES` is written (the member's name), as SSAS writes it; the reference
+  skips it and so does olap4abap with the switch off.
+
+Off (the default) nothing changes, so the captured cases and the Mondrian test statements keep their expectations.
+Not done: a dimension of several hierarchies named without its hierarchy, and the other differences the reference's
+measurement lists (`docs/next-steps.md`); checked with FoodMart and the clinic InfoCube in the Syncfusion pivot.
+
 ## Installing on NetWeaver 7.52
 
 The package activates on 7.52 without changes (ABAP Doc and other warnings only). The tables' abapGit files were

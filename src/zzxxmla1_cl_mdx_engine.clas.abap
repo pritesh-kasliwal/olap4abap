@@ -3193,7 +3193,12 @@ CLASS zzxxmla1_cl_mdx_engine IMPLEMENTATION.
     LOOP AT query_axis-dimension_properties INTO DATA(id).
       DATA(name) = id->segments[ 1 ]-name.
       IF lines( id->segments ) = 1.
+        " MEMBER_VALUE is skipped as the reference skips it; with SSAS naming (ZZXXMLA1_CL_NAMING) it is written as
+        " SSAS writes it (clients that read SSAS's answers, the Syncfusion pivot, expect it)
         IF name = `MEMBER_VALUE`.
+          IF zzxxmla1_cl_naming=>ssas( ) = abap_true.
+            APPEND name TO axis-properties.
+          ENDIF.
           CONTINUE.
         ENDIF.
         IF NOT line_exists( standard[ table_line = name ] ).
@@ -9507,6 +9512,9 @@ CLASS zzxxmla1_cl_mdx_engine IMPLEMENTATION.
     DATA(parent) = COND ty_member( WHEN member-is_null = abap_false THEN schema_reader->get_parent_member( member ) ).
     CASE to_upper( name ).
       WHEN `NAME` OR `MEMBER_NAME`.
+        result = VALUE #( kind = zzxxmla1_cl_mdx_evaluator=>c_value-string text = name_of( member ) ).
+      WHEN `MEMBER_VALUE`.
+        " SSAS naming only (axis_properties): SSAS gives the member's value, here its name
         result = VALUE #( kind = zzxxmla1_cl_mdx_evaluator=>c_value-string text = name_of( member ) ).
       WHEN `CAPTION` OR `MEMBER_CAPTION`.
         result = VALUE #( kind = zzxxmla1_cl_mdx_evaluator=>c_value-string text = member-caption ).

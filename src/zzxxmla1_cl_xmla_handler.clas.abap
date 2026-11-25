@@ -353,6 +353,8 @@ CLASS zzxxmla1_cl_xmla_handler IMPLEMENTATION.
         repository = zzxxmla1_cl_repository=>get( ).
         schema = zzxxmla1_cl_schema=>get( ).
         data_source = repository->data_source( VALUE #( parsed-properties[ name = 'DataSourceInfo' ]-value OPTIONAL ) ).
+        " the data source's naming of hierarchies, before anything is named (ZZXXMLA1_CL_NAMING)
+        zzxxmla1_cl_naming=>set_ssas( zzxxmla1_cl_naming=>ssas_in_data_source_info( data_source-data_source_info ) ).
         result = VALUE #( status = 200 body = process( request = parsed url = url ) ).
         IF parts IS NOT INITIAL.
           " the Session element is in the parts' head already
@@ -1353,10 +1355,16 @@ CLASS zzxxmla1_cl_xmla_handler IMPLEMENTATION.
     DATA parts TYPE string_table.
     DATA(wanted_catalog) = VALUE string( request-properties[ name = 'Catalog' ]-value OPTIONAL ).
 
-    " the hierarchy a member or level unique name belongs to: its text up to the first closing bracket of the name
+    " the hierarchy a member or level unique name belongs to: its text up to the first closing bracket of the name,
+    " with SSAS naming (ZZXXMLA1_CL_NAMING) up to the second ([Dimension].[Hierarchy]), but for the measures
     DATA(derived) = VALUE string( ).
     LOOP AT request-restrictions INTO DATA(restriction) WHERE name = 'MEMBER_UNIQUE_NAME' OR name = 'LEVEL_UNIQUE_NAME'.
       DATA(position) = find( val = restriction-value sub = `].[` ).
+      IF position > 0 AND zzxxmla1_cl_naming=>ssas( ) = abap_true
+          AND to_upper( substring( val = restriction-value len = position + 1 ) ) <> `[MEASURES]`.
+        DATA(second) = find( val = restriction-value sub = `].[` off = position + 3 ).
+        position = COND #( WHEN second > 0 THEN second ELSE -1 ).
+      ENDIF.
       IF position > 0.
         derived = substring( val = restriction-value len = position + 1 ).
       ENDIF.
