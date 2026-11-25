@@ -2455,7 +2455,13 @@ CLASS zzxxmla1_cl_bw_clinic_gen IMPLEMENTATION.
           write( |proposal of { provider }: FAILED, { xom_error->error_message }| ).
           CONTINUE.
       ENDTRY.
-      tick_hierarchies( CHANGING schema = schema ).
+      " the copies of BW hierarchies are read and filled with HANA's SQL (ZZXXMLA1_CL_BW_HIERARCHY_COPY): on another
+      " database (SAP ASE) the schemas name none, BW's hierarchies are created all the same
+      IF zzxxmla1_cl_sql=>is_hana( ) = abap_true.
+        tick_hierarchies( CHANGING schema = schema ).
+      ELSE.
+        write( |{ provider }: BW hierarchies not in the schema (their copies need HANA)| ).
+      ENDIF.
       accept( catalog = provider schema = schema ).
       IF provider = c_cube.
         accept( catalog = c_test_catalog schema = test_schema( schema ) ).

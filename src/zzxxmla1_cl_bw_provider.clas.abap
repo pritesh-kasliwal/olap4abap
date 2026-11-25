@@ -10,7 +10,8 @@
 * Copyright (C) 2005-2021 Hitachi Vantara and others, Copyright (C) 2021-2025 Sergei Semenkov. See the NOTICE file.
 *----------------------------------------------------------------------------------------------------------------------*
 "! The metadata of a BW InfoProvider that a schema is proposed for (docs/schema-generator.md, Providers): a
-"! HANA-optimised InfoCube (RSDCUBE type B, subtype F: flat) or a cube-type aDSO (RSOADSO: activate data, cube delta
+"! HANA-optimised InfoCube (RSDCUBE type B, subtype F: flat), a standard InfoCube read as a flat one
+"! (ZZXXMLA1_CL_BW_CLASSIC_CUBE: BW on SAP ASE) or a cube-type aDSO (RSOADSO: activate data, cube delta
 "! only). Every name is BW's, never built: the fact table (RSD_FACTTAB_GET_FOR_CUBE, CL_RSO_ADSO=>GET_TABLNM, the
 "! aDSO's reporting view), the fields (RSDIOBJ-FIELDNM; an InfoCube's characteristics are its SID columns,
 "! RSD_SIDNM_GET_FROM_IOBJNM) and the characteristics' tables and views (ZZXXMLA1_CL_BW_VIEW_GEN, the view of the
@@ -249,7 +250,7 @@ CLASS zzxxmla1_cl_bw_provider IMPLEMENTATION.
   METHOD providers.
     SELECT c~infocube, c~infoarea, t~txtlg FROM rsdcube AS c
       LEFT OUTER JOIN rsdcubet AS t ON t~infocube = c~infocube AND t~objvers = c~objvers AND t~langu = @sy-langu
-      WHERE c~objvers = 'A' AND c~cubetype = 'B' AND c~cubesubtype = 'F'
+      WHERE c~objvers = 'A' AND c~cubetype = 'B' AND ( c~cubesubtype = 'F' OR c~cubesubtype = @space )
       INTO TABLE @DATA(cubes).
     LOOP AT cubes INTO DATA(cube).
       APPEND VALUE #( name = cube-infocube kind = c_kind-cube text = cube-txtlg infoarea = cube-infoarea ) TO result.
@@ -278,7 +279,8 @@ CLASS zzxxmla1_cl_bw_provider IMPLEMENTATION.
     adso = upper.
     SELECT SINGLE c~infocube, c~infoarea, t~txtlg FROM rsdcube AS c
       LEFT OUTER JOIN rsdcubet AS t ON t~infocube = c~infocube AND t~objvers = c~objvers AND t~langu = @sy-langu
-      WHERE c~infocube = @cube AND c~objvers = 'A' AND c~cubetype = 'B' AND c~cubesubtype = 'F'
+      WHERE c~infocube = @cube AND c~objvers = 'A' AND c~cubetype = 'B'
+        AND ( c~cubesubtype = 'F' OR c~cubesubtype = @space )
       INTO @DATA(cube_row).
     IF sy-subrc = 0.
       result = VALUE #( name = cube kind = c_kind-cube text = cube_row-txtlg infoarea = cube_row-infoarea ).
@@ -288,7 +290,7 @@ CLASS zzxxmla1_cl_bw_provider IMPLEMENTATION.
         WHERE adsonm = @adso AND objvers = 'A' AND activate_data = 'X' AND cubedeltaonly = 'X'
         INTO @DATA(found).
       IF sy-subrc <> 0.
-        fail( |{ upper } is neither an active HANA-optimised InfoCube nor an active cube-type aDSO| ).
+        fail( |{ upper } is neither an active InfoCube (HANA-optimised or standard) nor an active cube-type aDSO| ).
       ENDIF.
       result = VALUE #( name = found kind = c_kind-adso ).
       read_adso( EXPORTING adso = adso CHANGING provider = result ).
@@ -304,7 +306,7 @@ CLASS zzxxmla1_cl_bw_provider IMPLEMENTATION.
     cube = upper.
     adso = upper.
     SELECT SINGLE infocube FROM rsdcube
-      WHERE infocube = @cube AND objvers = 'A' AND cubetype = 'B' AND cubesubtype = 'F'
+      WHERE infocube = @cube AND objvers = 'A' AND cubetype = 'B' AND ( cubesubtype = 'F' OR cubesubtype = @space )
       INTO @DATA(found_cube) ##NEEDED.
     IF sy-subrc = 0.
       SELECT d~iobjnm FROM rsddimeiobj AS d
@@ -318,7 +320,7 @@ CLASS zzxxmla1_cl_bw_provider IMPLEMENTATION.
       WHERE adsonm = @adso AND objvers = 'A' AND activate_data = 'X' AND cubedeltaonly = 'X'
       INTO @DATA(found_adso) ##NEEDED.
     IF sy-subrc <> 0.
-      fail( |{ upper } is neither an active HANA-optimised InfoCube nor an active cube-type aDSO| ).
+      fail( |{ upper } is neither an active InfoCube (HANA-optimised or standard) nor an active cube-type aDSO| ).
     ENDIF.
     DATA objects TYPE cl_rso_adso_api=>tn_t_object.
     TRY.
@@ -443,6 +445,15 @@ CLASS zzxxmla1_cl_bw_provider IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD cube_fact_table.
+    " a standard InfoCube: the view of its flat facts if there is one (read_cube generates it)
+    IF zzxxmla1_cl_bw_classic_cube=>is_classic( cube ) = abap_true.
+      TRY.
+          result = zzxxmla1_cl_bw_classic_cube=>flat_facts( cube ).
+        CATCH zzxxmla1_cx_bw_provider.
+          CLEAR result.
+      ENDTRY.
+      RETURN.
+    ENDIF.
     DATA fact_table TYPE rsd_s_cube-facttab.
     CALL FUNCTION 'RSD_FACTTAB_GET_FOR_CUBE'
       EXPORTING
@@ -467,6 +478,10 @@ CLASS zzxxmla1_cl_bw_provider IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD read_cube.
+    " a standard InfoCube (BW on SAP ASE) is read from the view of its flat facts, generated here if missing
+    IF zzxxmla1_cl_bw_classic_cube=>is_classic( cube ) = abap_true.
+      zzxxmla1_cl_bw_classic_cube=>flat_facts( cube = cube generate = abap_true ).
+    ENDIF.
     DATA(fact_table) = cube_fact_table( cube ).
     IF fact_table IS INITIAL.
       fail( |InfoCube { cube }: BW gives no fact table| ).

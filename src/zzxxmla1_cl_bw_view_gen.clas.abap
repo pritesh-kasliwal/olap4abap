@@ -909,6 +909,15 @@ CLASS zzxxmla1_cl_bw_view_gen IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD cube_fact_table.
+    " a standard InfoCube: the view of its flat facts (ZZXXMLA1_CL_BW_CLASSIC_CUBE), generated if missing
+    IF zzxxmla1_cl_bw_classic_cube=>is_classic( cube ) = abap_true.
+      TRY.
+          result = zzxxmla1_cl_bw_classic_cube=>flat_facts( cube = cube generate = abap_true ).
+        CATCH zzxxmla1_cx_bw_provider.
+          CLEAR result.
+      ENDTRY.
+      RETURN.
+    ENDIF.
     DATA fact_table TYPE rsd_s_cube-facttab.
     CALL FUNCTION 'RSD_FACTTAB_GET_FOR_CUBE'
       EXPORTING
