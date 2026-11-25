@@ -2137,8 +2137,10 @@ CLASS zzxxmla1_cl_mdx_engine IMPLEMENTATION.
     SORT query_axes BY ordinal ASCENDING.
 
     " planning, cells first: a query whose NON EMPTY axes are the members with facts of a level each is one statement
-    " of the facts, its axes made from the groups
-    IF relational = abap_true AND non_all_members IS INITIAL.
+    " of the facts, its axes made from the groups. Its statements group by GROUPING SETS: not on SAP ASE, where the
+    " query takes the evaluator's way (same answer)
+    IF relational = abap_true AND non_all_members IS INITIAL
+       AND zzxxmla1_cl_sql=>grouping_sets_supported( ) = abap_true.
       DATA(grid_axes) = grid_axes( query = resolved query_axes = query_axes evaluator = evaluator
                                    slicer = result-slicer ).
       IF grid_axes IS NOT INITIAL.

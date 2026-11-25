@@ -9,7 +9,8 @@
 * olap4abap contains code derived from Mondrian (Eclipse Public License 1.0): Copyright (C) 1998-2005 Julian Hyde,
 * Copyright (C) 2005-2021 Hitachi Vantara and others, Copyright (C) 2021-2025 Sergei Semenkov. See the NOTICE file.
 *----------------------------------------------------------------------------------------------------------------------*
-"! Native SQL on the database of the system (HANA) through ADBC, as the reference runs its SQL through JDBC: the engine
+"! Native SQL on the database of the system (HANA; SAP ASE through the dialect methods is_hana, limit, to_string,
+"! columns_sql, grouping_sets_supported) through ADBC, as the reference runs its SQL through JDBC: the engine
 "! builds the statements itself (docs/mvp-scope.md, schema decision). Every column is read as a string; a number
 "! arrives in its plain form with the scale of its type, as Java's BigDecimal.toString writes it (1997 for INTEGER or
 "! DECIMAL(31,0), 2.500000 for 2.5 as DECIMAL(28,6)).
@@ -92,8 +93,36 @@ CLASS zzxxmla1_cl_sql DEFINITION
                 keys          TYPE string_table
       RETURNING VALUE(result) TYPE string.
 
+    " SQL dialect. The engine writes HANA's SQL; on another database of the SAP system (SAP ASE) the few constructs
+    " that differ are written by these methods. The database is sy-dbsys, a system field: asking costs nothing.
+    "! True on HANA (sy-dbsys HDB), false on any other database (SAP ASE: SYBASE).
+    CLASS-METHODS is_hana
+      RETURNING VALUE(result) TYPE abap_bool.
+    "! True where the database groups by GROUPING SETS with GROUPING_ID (HANA). Elsewhere the callers read each
+    "! grouping set with a statement of its own, as the reference does.
+    CLASS-METHODS grouping_sets_supported
+      RETURNING VALUE(result) TYPE abap_bool.
+    "! The clause that limits a statement's rows, with a leading blank: HANA ` LIMIT n OFFSET m`, ASE
+    "! ` ROWS LIMIT n OFFSET m`; no offset for 0.
+    CLASS-METHODS limit
+      IMPORTING !limit        TYPE i
+                !offset       TYPE i DEFAULT 0
+      RETURNING VALUE(result) TYPE string.
+    "! An expression converted to a string: HANA TO_NVARCHAR( x ), ASE CAST( x AS VARCHAR(n) ).
+    CLASS-METHODS to_string
+      IMPORTING expression    TYPE csequence
+      RETURNING VALUE(result) TYPE string.
+    "! A statement giving per column of the named tables and views of the schema its table name, column name, data
+    "! type in HANA's names (NVARCHAR, DECIMAL, INTEGER, BIGINT, DOUBLE, DATE, ...) and, with with_size, its scale
+    "! and length as strings. names: the SQL literals of the names, comma separated.
+    CLASS-METHODS columns_sql
+      IMPORTING names         TYPE string
+                with_size     TYPE abap_bool DEFAULT abap_false
+      RETURNING VALUE(result) TYPE string.
+
   PROTECTED SECTION.
   PRIVATE SECTION.
+    CONSTANTS c_ase_string_length TYPE i VALUE 1333.
     "! The statement as statement_log keeps it: with the bound values after it (/* ? = -2, 5 */).
     CLASS-METHODS logged_text
       IMPORTING !sql          TYPE string
@@ -222,9 +251,56 @@ CLASS zzxxmla1_cl_sql IMPLEMENTATION.
     result = `'` && replace( val = value sub = `'` with = `''` occ = 0 ) && `'`.
   ENDMETHOD.
 
+  METHOD is_hana.
+    result = xsdbool( sy-dbsys(3) = 'HDB' ).
+  ENDMETHOD.
+
+  METHOD grouping_sets_supported.
+    result = is_hana( ).
+  ENDMETHOD.
+
+  METHOD limit.
+    result = COND #( WHEN is_hana( ) = abap_true THEN | LIMIT { limit }| ELSE | ROWS LIMIT { limit }| ) &&
+             COND #( WHEN offset > 0 THEN | OFFSET { offset }| ).
+  ENDMETHOD.
+
+  METHOD to_string.
+    result = COND #( WHEN is_hana( ) = abap_true THEN |TO_NVARCHAR( { expression } )|
+                     ELSE |CAST( { expression } AS VARCHAR({ c_ase_string_length }) )| ).
+  ENDMETHOD.
+
+  METHOD columns_sql.
+    IF is_hana( ) = abap_true.
+      DATA(size) = COND string( WHEN with_size = abap_true THEN `, TO_NVARCHAR( SCALE ), TO_NVARCHAR( LENGTH )` ).
+      result = |SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE_NAME{ size } FROM SYS.TABLE_COLUMNS | &&
+               |WHERE SCHEMA_NAME = CURRENT_SCHEMA AND TABLE_NAME IN ( { names } ) UNION ALL | &&
+               |SELECT VIEW_NAME, COLUMN_NAME, DATA_TYPE_NAME{ size } FROM SYS.VIEW_COLUMNS | &&
+               |WHERE SCHEMA_NAME = CURRENT_SCHEMA AND VIEW_NAME IN ( { names } )|.
+      RETURN.
+    ENDIF.
+    " SAP ASE: the catalog of the database (tables U and views V of the SAP schema), its type names as HANA's
+    DATA(type_name) = `CASE LOWER( t.name ) ` &&
+      `WHEN 'varchar' THEN 'NVARCHAR' WHEN 'univarchar' THEN 'NVARCHAR' WHEN 'nvarchar' THEN 'NVARCHAR' ` &&
+      `WHEN 'char' THEN 'NVARCHAR' WHEN 'unichar' THEN 'NVARCHAR' WHEN 'nchar' THEN 'NVARCHAR' ` &&
+      `WHEN 'text' THEN 'NCLOB' WHEN 'unitext' THEN 'NCLOB' ` &&
+      `WHEN 'decimal' THEN 'DECIMAL' WHEN 'numeric' THEN 'DECIMAL' WHEN 'decimaln' THEN 'DECIMAL' ` &&
+      `WHEN 'numericn' THEN 'DECIMAL' WHEN 'int' THEN 'INTEGER' WHEN 'intn' THEN 'INTEGER' ` &&
+      `WHEN 'bigint' THEN 'BIGINT' WHEN 'smallint' THEN 'SMALLINT' WHEN 'tinyint' THEN 'TINYINT' ` &&
+      `WHEN 'float' THEN 'DOUBLE' WHEN 'floatn' THEN 'DOUBLE' WHEN 'double precision' THEN 'DOUBLE' ` &&
+      `WHEN 'real' THEN 'REAL' WHEN 'date' THEN 'DATE' WHEN 'daten' THEN 'DATE' ` &&
+      `WHEN 'varbinary' THEN 'VARBINARY' WHEN 'binary' THEN 'VARBINARY' WHEN 'image' THEN 'BLOB' ` &&
+      `ELSE UPPER( t.name ) END`.
+    result = |SELECT o.name, c.name, { type_name }| &&
+             COND string( WHEN with_size = abap_true
+                          THEN |, CAST( COALESCE( c.scale, 0 ) AS VARCHAR(10) ), CAST( c.length AS VARCHAR(10) )| ) &&
+             | FROM syscolumns c INNER JOIN sysobjects o ON o.id = c.id| &&
+             | INNER JOIN systypes t ON t.usertype = c.usertype| &&
+             | WHERE o.type IN ( 'U', 'V' ) AND o.name IN ( { names } )|.
+  ENDMETHOD.
+
   METHOD key_condition.
     IF key IS INITIAL.
-      result = |COALESCE( TO_NVARCHAR( { column } ), '' ) = ''|.
+      result = |COALESCE( { to_string( column ) }, '' ) = ''|.
     ELSE.
       result = |{ column } = { literal( key ) }|.
     ENDIF.

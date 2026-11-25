@@ -1308,7 +1308,9 @@ CLASS zzxxmla1_cl_mdx_facts IMPLEMENTATION.
         ENDLOOP.
       ENDLOOP.
     ENDLOOP.
-    IF lines( result ) = 1 OR lines( columns ) > c_max_grouping_columns.
+    " without GROUPING SETS (SAP ASE) every pattern is read with a statement of its own, as the reference reads them
+    IF lines( result ) = 1 OR lines( columns ) > c_max_grouping_columns
+       OR zzxxmla1_cl_sql=>grouping_sets_supported( ) = abap_false.
       LOOP AT result ASSIGNING <set>.
         <set>-groups = load( filters = patterns[ <set>-pattern ]-filters constraint = <set>-segment slicer = slicer ).
       ENDLOOP.
@@ -1875,12 +1877,13 @@ CLASS zzxxmla1_cl_mdx_facts IMPLEMENTATION.
                             WHEN operator = `ENDS` THEN `%` && pattern
                             ELSE `%` && pattern && `%` ).
           result = COND #( WHEN operator = `ICONTAINS`
-                           THEN |LOWER( TO_NVARCHAR( { column } ) ) LIKE LOWER( { zzxxmla1_cl_sql=>literal( pattern ) } )|
-                           ELSE |TO_NVARCHAR( { column } ) LIKE { zzxxmla1_cl_sql=>literal( pattern ) }| )
+                           THEN |LOWER( { zzxxmla1_cl_sql=>to_string( column ) } ) | &&
+                                |LIKE LOWER( { zzxxmla1_cl_sql=>literal( pattern ) } )|
+                           ELSE |{ zzxxmla1_cl_sql=>to_string( column ) } LIKE { zzxxmla1_cl_sql=>literal( pattern ) }| )
                 && | ESCAPE '\\'|.
         ELSEIF node-column-quoted = abap_true.
           " a string comparison: the column may be a number, so its text is compared
-          result = |TO_NVARCHAR( { column } ) { operator } { zzxxmla1_cl_sql=>literal( node-column-value ) }|.
+          result = |{ zzxxmla1_cl_sql=>to_string( column ) } { operator } { zzxxmla1_cl_sql=>literal( node-column-value ) }|.
         ELSE.
           result = |{ column } { operator } { node-column-value }|.
         ENDIF.
@@ -2116,7 +2119,7 @@ CLASS zzxxmla1_cl_mdx_facts IMPLEMENTATION.
                 COND string( WHEN condition IS NOT INITIAL
                              THEN | WHERE { condition_sql( condition = condition index = 1 values = values ) }| ) &&
                 | ORDER BY { concat_lines_of( table = order_by sep = `, ` ) }| &&
-                COND string( WHEN limit > 0 THEN | LIMIT { limit }| ).
+                COND string( WHEN limit > 0 THEN zzxxmla1_cl_sql=>limit( limit ) ).
     READ TABLE top_answers INTO DATA(answer) WITH TABLE KEY sql = sql.
     IF sy-subrc = 0.
       result = answer-paths.
@@ -2494,7 +2497,7 @@ CLASS zzxxmla1_cl_mdx_facts IMPLEMENTATION.
                              THEN | WHERE { concat_lines_of( table = conditions sep = ` AND ` ) }| ) &&
                 COND string( WHEN order_by IS NOT INITIAL
                              THEN | ORDER BY { concat_lines_of( table = order_by sep = `, ` ) }| ) &&
-                COND string( WHEN max_rows > 0 THEN | LIMIT { max_rows }| ).
+                COND string( WHEN max_rows > 0 THEN zzxxmla1_cl_sql=>limit( max_rows ) ).
 
     " the XML schema types of the columns: of a key read from the fact table the type of the dimension's column
     LOOP AT result-columns ASSIGNING FIELD-SYMBOL(<column>).
@@ -2583,12 +2586,7 @@ CLASS zzxxmla1_cl_mdx_facts IMPLEMENTATION.
   METHOD column_types.
     DATA(names) = concat_lines_of( table = VALUE string_table( FOR t IN tables ( zzxxmla1_cl_sql=>literal( t ) ) )
                                    sep   = `, ` ).
-    DATA(sql) = |SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE_NAME, TO_NVARCHAR( SCALE ), TO_NVARCHAR( LENGTH ) | &&
-                |FROM SYS.TABLE_COLUMNS | &&
-                |WHERE SCHEMA_NAME = CURRENT_SCHEMA AND TABLE_NAME IN ( { names } ) UNION ALL | &&
-                |SELECT VIEW_NAME, COLUMN_NAME, DATA_TYPE_NAME, TO_NVARCHAR( SCALE ), TO_NVARCHAR( LENGTH ) | &&
-                |FROM SYS.VIEW_COLUMNS | &&
-                |WHERE SCHEMA_NAME = CURRENT_SCHEMA AND VIEW_NAME IN ( { names } )|.
+    DATA(sql) = zzxxmla1_cl_sql=>columns_sql( names = names with_size = abap_true ).
     LOOP AT zzxxmla1_cl_sql=>query( sql = sql columns = 5 ) INTO DATA(row).
       INSERT VALUE #( table = row[ 1 ] column = row[ 2 ] data_type = row[ 3 ] scale = row[ 4 ] length = row[ 5 ] )
              INTO TABLE result.

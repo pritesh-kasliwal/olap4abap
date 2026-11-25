@@ -592,7 +592,7 @@ CLASS zzxxmla1_cl_model IMPLEMENTATION.
                         THEN | WHERE { concat_lines_of( table = conditions sep = ` AND ` ) }| ) &&
                 | ORDER BY { concat_lines_of( table = order_by sep = |{ direction }, | ) }{ direction }|.
     IF limit > 0.
-      sql = |{ sql } LIMIT { limit }| && COND #( WHEN offset > 0 THEN | OFFSET { offset }| ).
+      sql = sql && zzxxmla1_cl_sql=>limit( limit = limit offset = offset ).
     ENDIF.
     result = members_of_rows( hierarchy = down rows = zzxxmla1_cl_sql=>query( sql = sql columns = lines( columns ) ) ).
     " the members of the levels above come with the rows: the ancestors, once each
@@ -693,7 +693,7 @@ CLASS zzxxmla1_cl_model IMPLEMENTATION.
   METHOD key_order_condition.
     IF key IS INITIAL.
       " NULL (or empty) comes first: nothing before it, every other key after it
-      result = COND #( WHEN operator = `<` THEN `1 = 0` ELSE |COALESCE( TO_NVARCHAR( { column } ), '' ) <> ''| ).
+      result = COND #( WHEN operator = `<` THEN `1 = 0` ELSE |COALESCE( { zzxxmla1_cl_sql=>to_string( column ) }, '' ) <> ''| ).
     ELSEIF operator = `<`.
       result = |( { column } < { zzxxmla1_cl_sql=>literal( key ) } OR { column } IS NULL )|.
     ELSE.
@@ -947,10 +947,7 @@ CLASS zzxxmla1_cl_model IMPLEMENTATION.
     ENDIF.
     DATA(names) = concat_lines_of( table = VALUE string_table( FOR t IN tables ( zzxxmla1_cl_sql=>literal( t ) ) )
                                    sep   = `, ` ).
-    DATA(sql) = |SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE_NAME FROM SYS.TABLE_COLUMNS | &&
-                |WHERE SCHEMA_NAME = CURRENT_SCHEMA AND TABLE_NAME IN ( { names } ) UNION ALL | &&
-                |SELECT VIEW_NAME, COLUMN_NAME, DATA_TYPE_NAME FROM SYS.VIEW_COLUMNS | &&
-                |WHERE SCHEMA_NAME = CURRENT_SCHEMA AND VIEW_NAME IN ( { names } )|.
+    DATA(sql) = zzxxmla1_cl_sql=>columns_sql( names ).
     LOOP AT zzxxmla1_cl_sql=>query( sql = sql columns = 3 ) INTO DATA(row).
       INSERT VALUE #( table = row[ 1 ] column = row[ 2 ] data_type = row[ 3 ] ) INTO TABLE columns.
     ENDLOOP.
